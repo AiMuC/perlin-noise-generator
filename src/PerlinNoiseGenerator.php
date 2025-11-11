@@ -19,6 +19,7 @@ class PerlinNoiseGenerator
     const SIZE = 'size';
     const PERSISTENCE = 'persistence';
     const MAP_SEED = 'map_seed';
+    const BASE_SCALE = 32;
 
     /**
      * @var number|string
@@ -71,6 +72,61 @@ class PerlinNoiseGenerator
         }
 
         return $this->terra;
+    }
+
+    /**
+     * Get noise value at world coordinate (x, y). Supports infinite world.
+     *
+     * @param float $x World X coordinate
+     * @param float $y World Y coordinate
+     * @return float Raw noise value (un-normalized sum)
+     */
+    public function getNoise(float $x, float $y)
+    {
+        $value = 0.0;
+        $amp = 1.0;
+        $octave_count = 0;
+        $max_octaves = 10;
+
+        while ($amp > 0.0001 && $octave_count < $max_octaves) {
+            $spacing = static::BASE_SCALE / pow(2, $octave_count);
+            $ix = floor($x / $spacing);
+            $iy = floor($y / $spacing);
+            $fx = ($x / $spacing) - $ix;
+            $fy = ($y / $spacing) - $iy;
+
+            $a = $this->getLatticeValue($ix, $iy, $octave_count);
+            $b = $this->getLatticeValue($ix + 1, $iy, $octave_count);
+            $c = $this->getLatticeValue($ix, $iy + 1, $octave_count);
+            $d = $this->getLatticeValue($ix + 1, $iy + 1, $octave_count);
+
+            $i1 = (1 - $fx) * $a + $fx * $b;
+            $i2 = (1 - $fx) * $c + $fx * $d;
+            $z = (1 - $fy) * $i1 + $fy * $i2;
+
+            $value += $z * $amp;
+
+            $amp *= $this->persistence;
+            $octave_count++;
+        }
+
+        return $value;
+    }
+
+    /**
+     * Get pseudo-random value (0-1) at lattice point for given octave.
+     *
+     * @param int $ix
+     * @param int $iy
+     * @param int $octave
+     * @return float
+     */
+    protected function getLatticeValue(int $ix, int $iy, int $octave): float
+    {
+        $key = $this->mapSeed . ':' . $octave . ':' . $ix . ':' . $iy;
+        $hash = hexdec(substr(md5($key), 0, 8));
+        mt_srand($hash);
+        return mt_rand() / mt_getrandmax();
     }
 
     /**
@@ -146,7 +202,8 @@ class PerlinNoiseGenerator
             throw new LogicException('Size must be set');
         }
 
-        mt_srand($this->numericMapSeed * $this->persistence * $this->size);
+        // Removed size dependency from seed for better consistency, though generate still uses fixed size
+        mt_srand($this->numericMapSeed * $this->persistence);
 
         $this->terra = new SplFixedArray($this->size);
         for ($y = 0; $y < $this->size; $y++) {
@@ -164,7 +221,7 @@ class PerlinNoiseGenerator
      */
     protected function random()
     {
-        return mt_rand() / getrandmax();
+        return mt_rand() / mt_getrandmax();
     }
 
     protected function getOctaves()
